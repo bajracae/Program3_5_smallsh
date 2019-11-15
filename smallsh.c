@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <dirent.h>
 
 int MAX_LENGTH_OF_STR = 2048;
 int MAX_NUM_OF_ARGS = 512;
@@ -9,26 +10,29 @@ int MAX_NUM_OF_ARGS = 512;
 bool checkNumArgs(char * input);
 bool signExists(char * input);
 void expandfunction(char * input);
+char ** commandArr(char * input, int * numStr);
+void printArr(char ** array, int numStr);
+void cdCommand(char ** array); 
 
 int main() {
-    char * input = (char *)malloc(sizeof(char) * MAX_LENGTH_OF_STR);
     
-    do {
-        printf(": ");
-        fgets(input, MAX_LENGTH_OF_STR, stdin); // Might need to change to getline
-        strtok(input, "\n");
-        if(checkNumArgs(input) != true) {
-            continue;
-        }
-        if(strcmp("exit", input) == 0) {
-    
-        } 
-    
-    } while(strcmp(input, "exit") != 0);
-    
-    return 0;
-    char input[256] = "echo $$ dsfds $$ $$$$";
-    expandfunction(input);
+    // char * input;
+    // size_t size = MAX_LENGTH_OF_STR;
+    // do {
+    //     printf(": ");
+    //     getline(&input, &size, stdin); 
+    //     strtok(input, "\n");
+    //     expandfunction(input);
+    //     printf("%s\n", input);
+    //     if(checkNumArgs(input) != true) {
+    //         continue;
+    //     }
+    // 
+    // } while(strcmp(input, "exit") != 0);
+    int numStr = 0;
+    char input[256] = "";
+    char ** array = commandArr(input, &numStr);
+    cdCommand(array);
     return 0;
 }
 
@@ -46,13 +50,82 @@ bool checkNumArgs(char * input) {
     return false;
 }
 
-void changeDir() {
+char ** commandArr(char * input, int * numStr) {
+    char ** array;
+    array = malloc(MAX_NUM_OF_ARGS * sizeof(char *));
+    int k;
+    for(k = 0; k < MAX_NUM_OF_ARGS; k++) {
+        array[k] = malloc(MAX_LENGTH_OF_STR);
+    }
     
-    // find the current directory: cwd
-    // if it cd doesn't have any arguments, then change the director to home directory
-    // getenv() and pass in the string "HOME", returns a char *
-    // chdir() to change to another directory
-    // if the user includes an argument with the name of a folder, check if the directory exists and if does 
+    int i, j;
+    j = 0; 
+    for(i = 0; i < strlen(input) + 1; i++) {
+        if(input[i] == ' ' || input[i] == '\0') {
+            array[*numStr][j] = '\0';
+            j = 0;
+            (*numStr)++;
+        }
+        else {
+            array[*numStr][j] = input[i];
+            j++;
+        }
+    }
+    return array;
+}
+
+void printArr(char ** array, int numStr) {
+    int i;
+    for(i = 0; i < numStr; i++) {
+        printf("%s\n", array[i]);
+    }
+}
+
+void cdCommand(char ** array) {
+    char str[1000];
+
+    if(strcmp(array[0], "cd") == 0) {
+        if(strcmp(array[1], "") == 0) {
+            chdir(getenv("HOME"));
+            getcwd(str, sizeof(str));
+            printf("%s\n", str);
+        }
+        else {
+            chdir(array[1]);
+            getcwd(str, sizeof(str));
+            printf("%s\n", str);
+        }
+    }
+    else {
+        printf("ERROR\n");
+    }
+}
+
+void exitCommand(char ** array) {
+    if(strcmp(array[0], "exit") == 0) {
+        if(strcmp(array[1], "") == 0) {
+            // Kill everything
+            // kill child and foreground processes
+            // holder for all pid of child processes
+            // run sigkill for each child process
+        }
+        else {
+            printf("ERROR\n");
+        }
+    }
+}
+
+void statusCommand(char ** array) {
+    if(strcmp(array[0], "status") == 0) {
+        // Print out exit status or the terminating signal of the last foreground process
+    }
+}
+
+bool ambExist(char ** array, int numStr) {
+    if(strcmp(array[numStr-1], "&") == 0){
+        return true;
+    }
+    return false;
 }
 
 bool signExists(char * input) {
@@ -65,17 +138,10 @@ bool signExists(char * input) {
     return false;
 }
 
-void expandfunction(char * input) {
-    // cd aeijan $$ - the dollar signs have to become a pid of parent
-    // change string?? erase the dollar signs and change the string
-    // example: echo $$ expands to echo 5234
-    // return 1 if  the dollar signs exist
-    // Makes this program easier to grade?
-    
-    // input: "echo $$ dsfds $$ $$$$";
+void expandfunction(char * input) { // This should be the string that we use for the rest of the program
     pid_t pid = getpid();
     int temp = (int)pid;
-    char newString[256];
+    char newString[MAX_LENGTH_OF_STR]; // MIGHT NEED TO INCREASE THIS INCASE IT OVERFLOWS
     while(signExists(input) == true) {
         char * dds = strstr(input, "$$");
         dds[0] = '%';
@@ -83,16 +149,13 @@ void expandfunction(char * input) {
         sprintf(newString, input, (int)pid);
         strcpy(input, newString);
     }
-    printf("%s\n",newString);
 }
 
-void exitShell() {
-    // kill child and foreground processes
-    // holder for all pid of child processes
-    // run sigkill for each child process
+void redirectCommand(char ** array) {
+    int i;
+    for()
+    
 }
-
-// redirection() {}
 // using > or < to redirection
 // dup2()
 // cat < red needs to become cat
