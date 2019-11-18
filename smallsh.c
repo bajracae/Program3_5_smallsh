@@ -17,7 +17,6 @@ void cdCommand(char ** array);
 char ** createArr();
 bool isComment(char ** array);
 bool ambExist(char ** array, int num_of_strings);
-bool notBulitIn(char ** array);
 void redirectCommand(char ** array, int num_of_strings);
 void nonBuiltCommand(char ** user_array, int num_of_strings);
 bool hasRedirection(char ** user_array, int num_of_strings);
@@ -98,41 +97,38 @@ void nonBuiltCommand(char ** user_array, int num_of_strings) {
             break;
         case 0: // child process stuff runs here 
             if(hasRedirection(user_array, num_of_strings) == true) {
-                for(i = num_of_strings; i > 0; i--) {
+                for(i = num_of_strings-1; i >= 0; i--) {
                     // redirect to stdin
-                    if(strcmp(user_array[i-2], "<") == 0) {
-                        inputFile = open(user_array[i-1], O_RDONLY);
+                    if(strcmp(user_array[i], "<") == 0) {
+                        inputFile = open(user_array[i+1], O_RDONLY);
                         if(inputFile == -1) {
                             printf("Input file could not be opened for reading.\n");
-                            // fflush();
+                            fflush(stdout);
                             exit(1); // How to not exit the shell??
                         }
                         result = dup2(inputFile, 0);
                         if(result == -1) {
                             printf("(error with stdin)\n");
+                            fflush(stdout);
                         }
-                        
                     }
-                
                     // redirect to stdout
-                    else if(strcmp(user_array[i-2], ">") == 0) {
-                        outputFile = open(user_array[i-1], O_WRONLY | O_CREAT | O_TRUNC, 0644); // These will go into dup
+                    else if(strcmp(user_array[i], ">") == 0) {
+                        outputFile = open(user_array[i+1], O_WRONLY | O_CREAT | O_TRUNC, 0644); // These will go into dup
                         if(outputFile == -1) {
                             printf("Input file could not be opened for writing.\n");
-                            // fflush();
+                            fflush(stdout);
                             exit(1); // How to not exit the shell??
                         }
                         result = dup2(outputFile, 1);
                         if(result == -1) {
                             printf("(error with stdout)\n");
+                            fflush(stdout);
                         }
-                        
                     }
-                
                     else {
                         continue;
                     }
-
                 }
             }
             removeRedirection(user_array, num_of_strings);
@@ -149,9 +145,7 @@ void removeRedirection(char ** user_array, int num_of_strings) {
     int count = 0;
 
         for(i = 0; i < num_of_strings; i++) {
-            printf("this: %s\n", user_array[i]);
             if((strcmp(user_array[i], ">") == 0) || (strcmp(user_array[i], "<") == 0)) {
-                printf("I am here3\n");
                 count = i;
                 break;
             }
@@ -349,14 +343,6 @@ void redirectCommand(char ** user_array, int num_of_strings) {
     // else {
     
     // }
-}
-
-
-bool notBulitIn(char ** array) {
-    if((strcmp(array[0], "cd") != 0) && (strcmp(array[0], "exit") != 0) && (strcmp(array[0], "status") != 0)) {
-        return true;    
-    }
-    return false;
 }
 
 bool hasRedirection(char ** user_array, int num_of_strings) {
