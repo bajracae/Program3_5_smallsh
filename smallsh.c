@@ -5,9 +5,13 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
 int MAX_LENGTH_OF_STR = 2048;
 int MAX_NUM_OF_ARGS = 512;
+pid_t pid_array[1000];
+int pid_index = 0;
 
 bool ifValidArgNum(char * input);
 bool signExists(char * input);
@@ -19,11 +23,14 @@ void exitCommand();
 char ** createArr();
 bool isComment(char ** array);
 bool ambExist(char ** array, int num_of_strings);
-void nonBuiltBackground(char ** user_array, int num_of_strings);
 void nonBuiltForeground(char ** user_array, int num_of_strings, int * childExitedMethod);
+void nonBuiltBackground(char ** user_array, int num_of_strings);
 bool hasRedirection(char ** user_array, int num_of_strings);
 void removeRedirection(char ** user_array, int num_of_strings);
 void statusCommand(int childExitedMethod);
+int countWords(char * user_input);
+
+// void catchSIGINT(int signo);
 
 int main() {
     int num_of_strings = 0;
@@ -33,21 +40,29 @@ int main() {
     char ** user_array = createArr();
     int i;
     size_t input_size = MAX_LENGTH_OF_STR;
-    pid_t pid_array[1000];
     
-    // Catch ctrl-C to terminate foreground
-    // https://stackoverflow.com/questions/1641182/how-can-i-catch-a-ctrl-c-event
-    // struct sigaction controlCHandler;
-    // sigaction(SIGINT, &controlCHandler, NULL);
-    // create a function that prints out the error
+
     
+    // struct sigaction SIGINT_action = {0};
+    
+    // CONTROL C COMMAND STUFF
+    // SIGINT_action.sa_handler = catchSIGINT;
+    // sigfillset(&SIGINT_action.sa_mask);
+    // SIGINT_action.sa_flags = 0;
+    // sigaction(SIGINT, &SIGINT_action, NULL);
+        
     do {
         printf(": ");
         fflush(stdout);
         getline(&user_input, &input_size, stdin);
         expanded_user_input = expandUserInput(user_input);
-        num_of_strings = countWords(expanded_user_input);
         
+        if(expanded_user_input[0] == '#') {
+            continue;
+        }
+        
+        num_of_strings = countWords(expanded_user_input);
+
         if(ifValidArgNum(expanded_user_input) != true) {
             printf("input is too big\n");
             fflush(stdout);
@@ -79,17 +94,43 @@ int main() {
             else {
                 nonBuiltForeground(user_array, num_of_strings, &childExitedMethod);
             }
-            // continue;
         }    
+                
+        int pid = 0;
+        int exitState = 0;
+        int exit = 0;
+        int sig = 0;
+        while((pid = waitpid(-1, &exitState, WNOHANG)) > 0){
+            if(WIFEXITED(exitState) != 0) {
+                exit = WEXITSTATUS(exitState);
+                printf("exit value %d\n", exit);
+                fflush(stdout);
+            }
+            else {
+                sig = WTERMSIG(exitState);
+                printf("pid: %d\n", pid);
+                fflush(stdout);
+                printf("terminated by signal %d\n", sig); // being printed twice... why?
+                fflush(stdout);
+            }
+        }
     } while(strcmp(user_input, "exit") != 0);
-    
     
     return 0;
 }
 
+// void catchSIGINT(int signo) {
+//     char message[256];
+//     char num[10];
+//     strcpy(message, "terminated by signal ");
+//     sprintf(num, "%d", signo);
+//     strcat(message, num);    
+//     write(STDOUT_FILENO, message, strlen(message));
+//     raise(SIGUSR2);        
+// }
+
 void nonBuiltForeground(char ** user_array, int num_of_strings, int * childExitedMethod) {
     pid_t spawnpid = -5;
-    // int childExitedMethod = 0;
     int inputFile = 0;
     int outputFile = 0;
     int result = 0;
@@ -138,7 +179,6 @@ void nonBuiltForeground(char ** user_array, int num_of_strings, int * childExite
                 }
             }
             removeRedirection(user_array, num_of_strings);
-            printf("I ran here\n");
             execvp(user_array[0], user_array);
             break;
         default: // parent process
@@ -165,7 +205,8 @@ void nonBuiltBackground(char ** user_array, int num_of_strings) {
             break;
         case 0:
             // print out the background PID here;
-            printf("background pid is %d\n", getpid());
+            pid_array[pid_index] = spawnpid;
+            pid_index++;
             if(ambExist(user_array, num_of_strings) == true) {
                 if(hasRedirection(user_array, num_of_strings) == true) {
                     for(i = num_of_strings-1; i >= 0; i--) {
@@ -206,7 +247,7 @@ void nonBuiltBackground(char ** user_array, int num_of_strings) {
                                     fflush(stdout);
                                     exit(1); // How to not exit the shell??
                                 }
-                                result = dup2(devNULLOutput, 0);
+                                result = dup2(devNULLOutput, 1);
                                 if(result == -1) {
                                     printf("(error with stdin)\n");
                                     fflush(stdout);
@@ -235,7 +276,8 @@ void nonBuiltBackground(char ** user_array, int num_of_strings) {
                 execvp(user_array[0], user_array);
             }
             break;
-        case 1:
+        default:
+            printf("background pid is %d\n", spawnpid);
             waitpid(spawnpid, &childExitedMethod, WNOHANG);
             break;
     }
@@ -249,9 +291,13 @@ void removeRedirection(char ** user_array, int num_of_strings) {
             count = i;
             break;
         }
+        if(strcmp(user_array[num_of_strings-1], "&") == 0) {
+            user_array[num_of_strings-1] = NULL;
+        }
     }
     if(count != 0) {
         for(count; count < num_of_strings; count++) {
+            //printf("%s\n", user_array[count]);
             user_array[count] = NULL;
         }
     }
@@ -283,7 +329,6 @@ bool signExists(char * input) {
 
 char * expandUserInput(char * input) { // This should be the string that we use for the rest of the program
     pid_t pid = getpid();
-    int temp = (int)pid;
     char newString[MAX_LENGTH_OF_STR]; // MIGHT NEED TO INCREASE THIS INCASE IT OVERFLOWS
     while(signExists(input) == true) {
         char * dds = strstr(input, "$$");
@@ -336,25 +381,13 @@ void cdCommand(char ** user_array) {
     fflush(stdout);
 }
 
-void exitCommand(char ** user_array, pid_t * pid_array, int pid_array_len) {
-    // Kill everything
-    // kill child and foreground processes
-    // holder for all pid of child processes
-    // run sigkill for each child process
-
+void exitCommand(char ** user_array, int * pid_array, int pid_index) {
     int i;
-    if(user_array[1] == NULL) {
-        for(i = 0; i < size; i++) {
-            if(pid_array[i] != 0) {
-                
-            }
-        }
-        exit(0);
+    for(i = 0; i < pid_index; i++) {
+
+        kill(pid_array[i], SIGKILL);
     }
-    else {
-        printf("ERROR\n");
-        fflush(stdout);
-    }
+    exit(0);
 }
 
 void statusCommand(int childExitedMethod) {
