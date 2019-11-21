@@ -6,12 +6,20 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <errno.h>
 
 int MAX_LENGTH_OF_STR = 2048;
 int MAX_NUM_OF_ARGS = 512;
 pid_t pid_array[1000];
 int pid_index = 0;
+struct sigaction SIGINT_action;
+struct sigaction SIGTSTP_action;
+bool isInBackground = true;
 
+// https://www.linuxprogrammingblog.com/code-examples
+sigset_t mask;
+
+void catchSIGTSTP(int signo);
 char ** createArr();
 bool signExists(char * user_input);
 char * expandUserInput(char * user_input);
@@ -35,6 +43,19 @@ int main() {
     int i = 0;
     int num_of_strings = 0;
     int childExitedMethod = -5;
+    
+    // SITE THE SLIDES //----------------------------------------------
+    // CONTROL C COMMAND STUFF
+    // SIGINT_action.sa_handler = SIG_IGN;
+    // sigfillset(&SIGINT_action.sa_mask);
+    // SIGINT_action.sa_flags = 0;
+    // sigaction(SIGINT, &SIGINT_action, NULL);
+    // 
+    // // CONTROL Z COMMAND STUFF
+    SIGTSTP_action.sa_handler = catchSIGTSTP;
+    sigfillset(&SIGTSTP_action.sa_mask);
+    SIGTSTP_action.sa_flags = SA_RESTART;
+    sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 
     do {
         printf(": ");
@@ -59,6 +80,10 @@ int main() {
         user_array[0] = strtok(expanded_user_input, " \n");    
         while((user_array[i] = strtok(NULL, " \n"))) i++;
         
+        if(strcmp(user_array[num_of_strings-1], "&") == 0) {
+            isInBackground = true;
+        }
+        
         if((user_array[0] == NULL) || (strcmp(user_array[0], "#") == 0)) { // Check for cases where #fork (no spaces)
             continue;
         }
@@ -69,7 +94,6 @@ int main() {
             statusCommand(childExitedMethod);
         }
         else if(strcmp(user_array[0], "exit") == 0) {
-            printf("This is before exit command is called.\n");
             exitCommand();
         }
         else {
@@ -95,6 +119,19 @@ int main() {
     } while (strcmp(user_input, "exit") != 0);
     
     return 0;
+}
+
+void catchSIGTSTP(int signo) {
+    char * message_enter = "Entering foreground-only mode (& is now ignored)\n";
+    char * message_exit = "Exiting foreground-only mode\n";
+    if(isInBackground == false) {
+        write(STDOUT_FILENO, message_enter, 25);
+        isInBackground = true;
+    }
+    else {
+        write(STDOUT_FILENO, message_exit, 25);
+        isInBackground = false;
+    }
 }
 
 char ** createArr() {
@@ -220,7 +257,7 @@ void statusCommand(int childExitedMethod) {
 void exitCommand() {
     int i;
     for(i = 0; i < pid_index; i++) {
-        kill(pid_array[i], SIGKILL);
+        kill(pid_array[i], SIGTERM);
     }
     exit(0);
 }
@@ -278,14 +315,14 @@ void redirectBack(char ** user_array, int num_of_strings) {
     int inResult = 0;
     int outResult = 0;
     
-    if(strcmp(user_array[num_of_strings-1], "&") == 0) {
-        user_array[num_of_strings-1] = NULL;
-    }
+    // if(strcmp(user_array[num_of_strings-1], "&") == 0) {
+    //     user_array[num_of_strings-1] = NULL;
+    // }
     
     int i;
-    for(i = num_of_strings-1; i >= 0; i--) {        
+    for(i = num_of_strings-2; i >= 0; i--) {        
         if(strcmp(user_array[i], "<") == 0) {
-            if(user_array[i+1] == NULL) {
+            if(strcmp(user_array[i+1], "&") == 0) {
                 devNullInput = open("/dev/null", 0);
                 if(devNullInput == -1) {
                     printf("Input file could not be opened for reading.\n");
@@ -317,7 +354,7 @@ void redirectBack(char ** user_array, int num_of_strings) {
             }
         }
         else if(strcmp(user_array[i], ">") == 0) {
-            if(user_array[i+1] == NULL) {
+            if(strcmp(user_array[i+1], "&") == 0) {
                 devNullOutput = open("/dev/null", 1);
                 if(devNullOutput == -1) {
                     printf("Input file could not be opened for writing.\n");
@@ -356,7 +393,8 @@ void redirectBack(char ** user_array, int num_of_strings) {
 
 void nonBuiltCommand(char ** user_array, int num_of_strings, int * childExitedMethod) {
     pid_t spawnpid = -5;
-    
+    int execVal = 0;
+    sigprocmask(SIG_BLOCK, sig_t, NULL);
     spawnpid = fork();
     switch (spawnpid) {
         case -1:
@@ -364,24 +402,60 @@ void nonBuiltCommand(char ** user_array, int num_of_strings, int * childExitedMe
             exit(1);
             break;
         case 0:
-            if(hasRedirection(user_array, num_of_strings) == true) {
-                if(ambExist(user_array, num_of_strings) == true) {
+            // if(hasRedirection(user_array, num_of_strings) == true) {
+            //     if(ambExist(user_array, num_of_strings) == true && isInBackground == true) {
+            //         pid_array[pid_index] = spawnpid;
+            //         pid_index++;
+            //         redirectBack(user_array, num_of_strings);
+            //     }
+            //     else {
+            // 
+            //         // SIGINT_action.sa_handler = SIG_DFL;
+            //         // sigaction(SIGINT, &SIGINT_action, NULL);
+            //         isInBackground = false;
+            //         redirectFore(user_array, num_of_strings);
+            //     }
+            // }
+            // else {
+            //     if(ambExist(user_array, num_of_strings) == true && isInBackground == true) {
+            //         user_array[num_of_strings-1] = NULL;// CHECK IF THERE IS NO REDIRECTION    
+            //     }
+            //     else {
+            //         // SIGINT_action.sa_handler = SIG_DFL;
+            //         // sigaction(SIGINT, &SIGINT_action, NULL);
+            //     }
+            // }
+            if(ambExist(user_array, num_of_strings) == true && isInBackground == true) {
+                if(hasRedirection(user_array, num_of_strings) == true) {
                     pid_array[pid_index] = spawnpid;
                     pid_index++;
+                    if(strcmp(user_array[num_of_strings-1], "&") == 0) {
+                        user_array[num_of_strings-1] = NULL;
+                    }
                     redirectBack(user_array, num_of_strings);
                 }
                 else {
-                    redirectFore(user_array, num_of_strings);
+                    if(strcmp(user_array[num_of_strings-1], "&") == 0) {
+                        user_array[num_of_strings-1] = NULL;
+                    }
                 }
             }
-            execvp(user_array[0], user_array);
-            if(execvp(user_array[0], user_array) == -1) {
-                printf("%s: no such file or directory.\n", user_array[0]);
+            else {
+                SIGINT_action.sa_handler = SIG_DFL;
+                sigaction(SIGINT, &SIGINT_action, NULL);
+                redirectFore(user_array, num_of_strings);
+            }
+            execVal = execvp(user_array[0], user_array);
+            if(execVal == -1) {
+                printf("%s: %s\n", user_array[0], strerror(errno));
                 fflush(stdout);
+                exit(2);
             }          
             break;
         default:
+            sigprocmask(SIG_BLOCK, sig_t, NULL);
             if(ambExist(user_array, num_of_strings) == true) {
+                printf("background pid is %d\n", spawnpid);
                 waitpid(spawnpid, childExitedMethod, WNOHANG);
             }
             else {
